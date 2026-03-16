@@ -8380,6 +8380,14 @@ RP상 부활이나 생존 수단이 있다면 취소를 눌러 계속할 수 있
     return raw.replace(/^열화된\s*/, '').trim();
   }
 
+
+  function isSiterreCard(card){
+    const tribe = String(card?.tribe || '').trim();
+    if(tribe === '시테러') return true;
+    const baseName = getBaseCardName(card);
+    return ['해안의 폭주자','저해의 활주자','발해의 수확자','심해의 정초자','심해의 분출자','부영양의 폭주자','부영양의 활주자','부영양의 수확자','부영양의 정초자','부영양의 분출자','시테러'].includes(baseName);
+  }
+
   function ensureMayersState(){
     state.play.player.mayersMarks = Array.isArray(state.play.player.mayersMarks) ? state.play.player.mayersMarks.slice(0,7) : Array(7).fill(false);
     while(state.play.player.mayersMarks.length < 7) state.play.player.mayersMarks.push(false);
@@ -8465,7 +8473,7 @@ RP상 부활이나 생존 수단이 있다면 취소를 눌러 계속할 수 있
   function getKuriambroBloodMultiplier(owner='enemy'){
     const board = state.play?.[owner]?.board || [];
     let mult = 1;
-    board.forEach(card => {
+    board.forEach((card, idx) => {
       if(card && getCardHealth(card) > 0){
         const current = Number(card._kuriambroBloodMult || (card._kuriambroDoubleBlood ? 2 : 1) || 1);
         if(current > mult) mult = current;
@@ -10078,8 +10086,8 @@ RP상 부활이나 생존 수단이 있다면 취소를 눌러 계속할 수 있
     if(!isMayersMarkSystemActive()) return;
     const marks = getMayersMarks(side);
     (state.play?.[side]?.board || []).forEach((card, idx)=>{
-      const shouldBuff = String(card?.tribe || '') === '시테러' && !!marks[idx];
-      const isVent = getBaseCardName(card) === '심해의 분출자';
+      const shouldBuff = isSiterreCard(card) && !!marks[idx];
+      const isVent = getBaseCardName(card) === '심해의 분출자' || getBaseCardName(card) === '부영양의 분출자';
       if(shouldBuff && !card._mayersMarkBuffed){
         card.attack = Number(card.attack || 0) + 1;
         card.health = Number(card.health || 0) + 1;
@@ -10442,6 +10450,9 @@ RP상 부활이나 생존 수단이 있다면 취소를 눌러 계속할 수 있
     if(!isDemonKingHeathcliff()) return;
     state.play.enemy.heathMode = state.play.enemy.heathMode || 'summon';
     state.play.enemy.heroPowerData = JSON.parse(JSON.stringify(getHeathcliffHeroPower(state.play.enemy.heathMode)));
+    try{
+      state.play.enemy.heroPower = JSON.parse(JSON.stringify(state.play.enemy.heroPowerData));
+    }catch(_e){}
     syncHeathcliffWeaponStats();
   }
 
@@ -10631,7 +10642,15 @@ async function maybeTriggerHeathcliffSpecialPattern(){
     const pool = getAllWildhuntTemplates();
     if(!pool.length) return null;
     const picked = pool[Math.floor(Math.random() * pool.length)];
-    return cloneCardForPlay(picked);
+    const token = cloneCardForPlay(picked);
+    try{
+      if(token){
+        token.name = String(token.name || '').replace(/^열화된\s*/, '');
+        token._baseName = String(token._baseName || token.name || '').replace(/^열화된\s*/, '');
+        token.tribe = '와일드헌트';
+      }
+    }catch(_e){}
+    return token;
   }
 
 
@@ -10754,7 +10773,7 @@ async function maybeTriggerHeathcliffSpecialPattern(){
 
   function tickDormant(side){
     const board = state.play?.[side]?.board || [];
-    board.forEach(card => {
+    board.forEach((card, idx) => {
       if(!isDormant(card)) return;
       card._dormantTurns = Math.max(0, Number(card._dormantTurns || 0) - 1);
       if(card._dormantTurns === 0){
@@ -10995,7 +11014,7 @@ async function maybeTriggerHeathcliffSpecialPattern(){
 
   function refreshTurnAttackAvailability(side){
     const board = state.play?.[side]?.board || [];
-    board.forEach(card => {
+    board.forEach((card, idx) => {
       if(card && card.type === 'minion'){
         card._hasAttacked = false;
         card._attackCount = 0;
@@ -11425,7 +11444,7 @@ async function maybeTriggerHeathcliffSpecialPattern(){
       applyHeathAuraToCard(owner, card);
       updateSummonStateForNewCard(card);
       const desired = Number.isFinite(Number(targetSlot)) ? Math.max(0, Math.min(virtualLength, Number(targetSlot) - 1)) : virtualLength;
-      const enteredMarkedSlot = isDriftingMayers() ? !!getMayersMarks(owner)[desired] : false;
+      const enteredMarkedSlot = isMayersMarkSystemActive() ? !!getMayersMarks(owner)[desired] : false;
       card._enteredMarkedSlot = enteredMarkedSlot;
       if(!Array.isArray(queueCtx.spawned)) queueCtx.spawned = [];
       queueCtx.spawned.push({ card, desired });
@@ -11437,7 +11456,7 @@ async function maybeTriggerHeathcliffSpecialPattern(){
     applyHeathAuraToCard(owner, card);
     updateSummonStateForNewCard(card);
     const desired = Number.isFinite(Number(targetSlot)) ? Math.max(0, Math.min(state.play[owner].board.length, Number(targetSlot) - 1)) : state.play[owner].board.length;
-    const enteredMarkedSlot = isDriftingMayers() ? !!getMayersMarks(owner)[desired] : false;
+    const enteredMarkedSlot = isMayersMarkSystemActive() ? !!getMayersMarks(owner)[desired] : false;
     card._enteredMarkedSlot = enteredMarkedSlot;
     state.play[owner].board.splice(desired, 0, card);
     if(isDriftingMayers()){
@@ -12928,7 +12947,7 @@ function getJungYoonjaeDeck(){
       card._titanExtraUsesThisTurn = 0;
       card._titanUsedOptions = Array.isArray(card._titanUsedOptions) ? card._titanUsedOptions : [];
       const desired = Number.isFinite(Number(targetSlot)) ? Math.max(0, Math.min(side.board.length, Number(targetSlot) - 1)) : side.board.length;
-      card._enteredMarkedSlot = isDriftingMayers() ? !!getMayersMarks(owner)[desired] : false;
+      card._enteredMarkedSlot = isMayersMarkSystemActive() ? !!getMayersMarks(owner)[desired] : false;
       side.board.splice(desired, 0, card);
       if(isDriftingMayers()){
         applyMayersMarkedSlotBuffs(owner);
@@ -13415,54 +13434,66 @@ function getJungYoonjaeDeck(){
     const grantsImmune = weapon.name === '황제의 채찍과 주먹';
     if(grantsImmune) enemy._immune = true;
     renderPlayState();
-    const boardEntries = state.play.player.board.map((card, idx) => ({card, idx, threat:getAiThreat(card), hp:getCardHealth(card), atk:getCardAttack(card), taunt:(card.keywords||[]).includes('도발')}));
-    if(boardEntries.length){
-      let targetEntry = null;
-      const taunts = boardEntries.filter(entry => entry.taunt);
-      const sourcePool = taunts.length ? taunts : boardEntries;
-      const killableBig = sourcePool.filter(entry => entry.atk >= 10 && entry.hp <= atk).sort((a,b)=> b.threat - a.threat || b.atk - a.atk || a.hp - b.hp);
-      const killableAny = sourcePool.filter(entry => entry.hp <= atk).sort((a,b)=> b.threat - a.threat || b.atk - a.atk || a.hp - b.hp);
-      const safeTargets = sourcePool.filter(entry => grantsImmune || entry.atk < 10).sort((a,b)=> b.taunt - a.taunt || b.threat - a.threat || a.hp - b.hp);
-      if(killableBig.length) targetEntry = killableBig[0];
-      else if(safeTargets.length) targetEntry = safeTargets[0];
-      else if(killableAny.length) targetEntry = killableAny[0];
-      weapon._attackCount = Number(weapon._attackCount || 0) + 1;
-    weapon._hasAttacked = weapon._attackCount >= getMaxAttacks(weapon);
-    if(shouldFace && !boardEntries.some(e=>e.taunt)) targetEntry = null;
-    if(targetEntry){
-        const defender = state.play.player.board[targetEntry.idx];
-        showCombatCue(`${weapon.name} 강타`, `${defender.name}에게 ${atk} 피해`, '무기 공격', 'enemy');
-        await delay(350);
-        applyDamageToMinion('player', targetEntry.idx, atk);
-        if(!grantsImmune) applyDamageToHero('enemy', getCardAttack(defender));
-        removeDeadBoardCards('player');
+    try{
+      const boardEntries = state.play.player.board.map((card, idx) => ({card, idx, threat:getAiThreat(card), hp:getCardHealth(card), atk:getCardAttack(card), taunt:(card.keywords||[]).includes('도발')}));
+      const shouldFace = canAttackTarget(weapon, 'hero', boardEntries.length) && (
+        boardEntries.every(entry => !entry.taunt) && (
+          !boardEntries.length ||
+          boardEntries.length <= 1 ||
+          !boardEntries.some(entry => entry.atk >= 10 && entry.hp > atk)
+        )
+      );
+      if(boardEntries.length){
+        let targetEntry = null;
+        const taunts = boardEntries.filter(entry => entry.taunt);
+        const sourcePool = taunts.length ? taunts : boardEntries;
+        const killableBig = sourcePool.filter(entry => entry.atk >= 10 && entry.hp <= atk).sort((a,b)=> b.threat - a.threat || b.atk - a.atk || a.hp - b.hp);
+        const killableAny = sourcePool.filter(entry => entry.hp <= atk).sort((a,b)=> b.threat - a.threat || b.atk - a.atk || a.hp - b.hp);
+        const safeTargets = sourcePool.filter(entry => grantsImmune || entry.atk < 10).sort((a,b)=> b.taunt - a.taunt || b.threat - a.threat || a.hp - b.hp);
+        if(killableBig.length) targetEntry = killableBig[0];
+        else if(safeTargets.length) targetEntry = safeTargets[0];
+        else if(killableAny.length) targetEntry = killableAny[0];
+        weapon._attackCount = Number(weapon._attackCount || 0) + 1;
+        weapon._hasAttacked = weapon._attackCount >= getMaxAttacks(weapon);
+        if(shouldFace && !boardEntries.some(e=>e.taunt)) targetEntry = null;
+        if(targetEntry){
+          const defender = state.play.player.board[targetEntry.idx];
+          showCombatCue(`${weapon.name} 강타`, `${defender.name}에게 ${atk} 피해`, '무기 공격', 'enemy');
+          await delay(350);
+          applyDamageToMinion('player', targetEntry.idx, atk);
+          if(!grantsImmune) applyDamageToHero('enemy', getCardAttack(defender));
+          removeDeadBoardCards('player');
+        } else {
+          showCombatCue(`${weapon.name} 강타`, `내 영웅에게 ${atk} 피해`, '무기 공격', 'enemy');
+          await delay(350);
+          applyDamageToHero('player', atk);
+        }
       } else {
         showCombatCue(`${weapon.name} 강타`, `내 영웅에게 ${atk} 피해`, '무기 공격', 'enemy');
         await delay(350);
         applyDamageToHero('player', atk);
       }
-    } else {
-      showCombatCue(`${weapon.name} 강타`, `내 영웅에게 ${atk} 피해`, '무기 공격', 'enemy');
-      await delay(350);
-      applyDamageToHero('player', atk);
+      if(!weapon._infinite) weapon.durability = Math.max(0, Number(weapon.durability || 0) - 1);
+      const drawn = drawFromDeck('enemy');
+      if(drawn) addCardToHand('enemy', drawn, {sourceLabel:weapon.name, burnOnFull:true}); else triggerFatigue('enemy');
+      if(weapon.name === '황제의 채찍과 주먹'){
+        summonToken('enemy', createWheelToken('유생 공격 바퀴', 2, 2, ['속공'], 'assets/token_battle_roach.png'));
+        summonToken('enemy', createWheelToken('유생 공격 바퀴', 2, 2, ['속공'], 'assets/token_battle_roach.png'));
+      } else {
+        summonToken('enemy', createWheelToken('유생 공격 바퀴', 1, 1, ['속공'], 'assets/token_battle_roach.png'));
+        summonToken('enemy', createWheelToken('유생 공격 바퀴', 1, 1, ['속공'], 'assets/token_battle_roach.png'));
+      }
+      if(!weapon._infinite && Number(weapon.durability || 0) <= 0) enemy.weapon = null;
+      renderPlayState();
+      logPlay(`바퀴 황제가 ${weapon.name}으로 공격하고 카드를 뽑은 뒤 바퀴를 소환했다.`);
+      await delay(450);
+      return true;
+    } finally {
+      if(grantsImmune){
+        enemy._immune = false;
+        renderPlayState();
+      }
     }
-    if(!weapon._infinite) weapon.durability = Math.max(0, Number(weapon.durability || 0) - 1);
-    const drawn = drawFromDeck('enemy');
-    if(drawn) addCardToHand('enemy', drawn, {sourceLabel:weapon.name, burnOnFull:true}); else triggerFatigue('enemy');
-    if(weapon.name === '황제의 채찍과 주먹'){
-      summonToken('enemy', createWheelToken('유생 공격 바퀴', 2, 2, ['속공'], 'assets/token_battle_roach.png'));
-      summonToken('enemy', createWheelToken('유생 공격 바퀴', 2, 2, ['속공'], 'assets/token_battle_roach.png'));
-    } else {
-      summonToken('enemy', createWheelToken('유생 공격 바퀴', 1, 1, ['속공'], 'assets/token_battle_roach.png'));
-      summonToken('enemy', createWheelToken('유생 공격 바퀴', 1, 1, ['속공'], 'assets/token_battle_roach.png'));
-    }
-    if(!weapon._infinite && Number(weapon.durability || 0) <= 0) enemy.weapon = null;
-    renderPlayState();
-    logPlay(`바퀴 황제가 ${weapon.name}으로 공격하고 카드를 뽑은 뒤 바퀴를 소환했다.`);
-    await delay(450);
-    enemy._immune = false;
-    renderPlayState();
-    return true;
   }
 
 function getWheelEmperorPhaseData(phase){
@@ -13761,7 +13792,7 @@ function getWheelEmperorPhaseData(phase){
       }
       logPlay(`${card.name}의 죽음의 메아리로 4/15 대형 윤재를 소환했다.`);
     } else if(baseName === '저해의 활주자'){
-      const slot = (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
+      const slot = Number.isFinite(card._deathSlot) ? Number(card._deathSlot) : (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
       const draws = 1 + ((slot >= 0 && getMayersMarks(side)[slot]) ? 1 : 0);
       for(let i=0;i<draws;i++){
         const pick = drawSiterreCard(side);
@@ -13769,7 +13800,7 @@ function getWheelEmperorPhaseData(phase){
       }
       logPlay(`${card.name}의 죽음의 메아리로 시테러 카드 ${draws}장을 손에 넣었다.`);
     } else if(baseName === '심해의 정초자'){
-      const slot = (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
+      const slot = Number.isFinite(card._deathSlot) ? Number(card._deathSlot) : (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
       if(slot >= 0){
         const marks = getMayersMarks(side);
         if(marks[slot]){
@@ -13782,13 +13813,21 @@ function getWheelEmperorPhaseData(phase){
         renderPlayScene();
         logPlay(`${card.name}의 죽음의 메아리로 명흔이 번져나갔다.`);
       }
+    } else if(baseName === '부영양의 폭주자'){
+      const slot = Number.isFinite(card._deathSlot) ? Number(card._deathSlot) : (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
+      if(slot >= 0){
+        getMayersMarks(side)[slot] = true;
+        applyMayersMarkedSlotBuffs(side);
+        renderPlayScene();
+        logPlay(`${card.name}의 죽음의 메아리로 현재 자리가 명흔이 되었다.`);
+      }
     } else if(baseName === '부영양의 활주자'){
-      const slot = (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
+      const slot = Number.isFinite(card._deathSlot) ? Number(card._deathSlot) : (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
       const amount = 1 + ((slot >= 0 && getMayersMarks(side)[slot]) ? 1 : 0);
       const granted = grantDivineShieldToRandomFriendlyMinions(side, amount);
       logPlay(`${card.name}의 죽음의 메아리로 무작위 아군 하수인 ${granted}체에게 천상의 보호막을 부여했다.`);
     } else if(baseName === '부영양의 정초자'){
-      const slot = (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
+      const slot = Number.isFinite(card._deathSlot) ? Number(card._deathSlot) : (state.play[side].board || []).findIndex(c => c && c._playId === card._playId);
       if(slot >= 0){
         markSlotsAround(side, [slot - 1, slot, slot + 1]);
         renderPlayScene();
@@ -13828,8 +13867,10 @@ function getWheelEmperorPhaseData(phase){
         target._rebornUsed = true;
         target._deathrattleResolved = false;
         target._deathrattlePendingReborn = false;
+        delete target._deathrattlePendingRemove;
         delete target._pendingRemovalUntil;
         setCardHealth(target, 1);
+        applyMayersMarkedSlotBuffs(side);
         showCombatCue(`${target.name || '카드'} 환생`, '생명력 1로 부활', '환생', side === 'player' ? 'player' : 'enemy');
         logPlay(`${side === 'player' ? '내' : '상대'} ${target.name || '카드'}가 환생으로 생명력 1로 되살아났다.`);
         setTimeout(() => flashCardById(target._playId, 'reborn-pop', 1000), 20);
@@ -13850,12 +13891,15 @@ function getWheelEmperorPhaseData(phase){
   function removeDeadBoardCards(side){
     const now = Date.now();
     const board = state.play[side].board || [];
+    const oldMarks = isMayersMarkSystemActive() ? getMayersMarks(side).slice(0,7) : Array(7).fill(false);
+    const currentMarksFor = (i) => isMayersMarkSystemActive() ? !!(getMayersMarks(side)[i]) : false;
     const survivors = [];
+    const compactedMarks = [];
     let removed = 0;
     const summonQueueContext = { owner: side, spawned: [], virtualBoard: Array.from(board) };
     state._summonQueueContext = summonQueueContext;
-    board.forEach(card => {
-      if(getCardHealth(card) > 0){ survivors.push(card); return; }
+    board.forEach((card, idx) => {
+      if(getCardHealth(card) > 0){ survivors.push(card); compactedMarks.push(currentMarksFor(idx)); return; }
       if(String(card?.tribe || '') === '혈귀' && !card._dulcineaCostReduced){
         card._dulcineaCostReduced = true;
         reduceDulcineaCostForBloodfiendDeath(side);
@@ -13880,23 +13924,28 @@ function getWheelEmperorPhaseData(phase){
         return;
       }
       if((card.keywords || []).includes('죽음의 메아리') && !card._deathrattleResolved){
+        card._deathSlot = idx;
         card._deathrattleResolved = true;
         triggerDeathrattle(side, card);
         scheduleBoardCleanup(side, 1550);
         survivors.push(card);
+        compactedMarks.push(currentMarksFor(idx));
         return;
       }
       if(card._pendingRemovalUntil && card._pendingRemovalUntil > now){
         survivors.push(card);
+        compactedMarks.push(currentMarksFor(idx));
         return;
       }
       if(card._deathrattlePendingRemove || card._deathrattlePendingReborn){
         if(card._pendingRemovalUntil && card._pendingRemovalUntil > now){
           survivors.push(card);
+          compactedMarks.push(currentMarksFor(idx));
           return;
         }
         if(card._deathrattlePendingReborn){
           survivors.push(card);
+          compactedMarks.push(currentMarksFor(idx));
           return;
         }
         const bloodTraitHealer = side === 'player' ? 'enemy' : 'player'; if(sideHasDonBloodTrait(bloodTraitHealer)){ const heal = Math.max(0, Math.floor((Number(card.baseHealth ?? card.originalHealth ?? card.maxHealth ?? 0)) / 2)); if(heal > 0){ healHero(bloodTraitHealer, heal); showCombatCue('혈귀', `${bloodTraitHealer === 'player' ? '열화된 돈키호테' : '돈키호테'}가 ${heal} 회복`, '특성', bloodTraitHealer === 'player' ? 'player' : 'enemy'); } }
@@ -13912,6 +13961,7 @@ function getWheelEmperorPhaseData(phase){
         showCombatCue(`${card.name || '카드'} 환생`, '생명력 1로 부활', '환생', side === 'player' ? 'player' : 'enemy');
         logPlay(`${side === 'player' ? '내' : '상대'} ${card.name || '카드'}가 환생으로 생명력 1로 되살아났다.`);
         setTimeout(() => flashCardById(card._playId, 'reborn-pop', 1000), 20);
+        compactedMarks.push(currentMarksFor(idx));
         return;
       }
       const bloodTraitHealer = side === 'player' ? 'enemy' : 'player'; if(sideHasDonBloodTrait(bloodTraitHealer)){ const heal = Math.max(0, Math.floor((Number(card.baseHealth ?? card.originalHealth ?? card.maxHealth ?? 0)) / 2)); if(heal > 0){ healHero(bloodTraitHealer, heal); showCombatCue('혈귀', `${bloodTraitHealer === 'player' ? '열화된 돈키호테' : '돈키호테'}가 ${heal} 회복`, '특성', bloodTraitHealer === 'player' ? 'player' : 'enemy'); } }
@@ -13925,12 +13975,24 @@ function getWheelEmperorPhaseData(phase){
       if(nextBoard.length >= 7) return;
       const desired = Number.isFinite(Number(entry.desired)) ? Math.max(0, Math.min(nextBoard.length, Number(entry.desired))) : nextBoard.length;
       nextBoard.splice(desired, 0, entry.card);
-      if(isDriftingMayers()){
+      if(isMayersMarkSystemActive()){
         entry.card._enteredMarkedSlot = !!entry.card._enteredMarkedSlot || !!getMayersMarks(side)[desired];
       }
     });
     state.play[side].board = nextBoard;
-    if(isDriftingMayers()) applyMayersMarkedSlotBuffs(side);
+    if(isMayersMarkSystemActive()){
+      const nextMarks = compactedMarks.slice(0,7);
+      queuedSpawns.forEach(entry => {
+        const desired = Number.isFinite(Number(entry.desired)) ? Math.max(0, Math.min(nextMarks.length, Number(entry.desired))) : nextMarks.length;
+        nextMarks.splice(desired, 0, false);
+      });
+      while(nextMarks.length < 7) nextMarks.push(false);
+      state.play[side].mayersMarks = nextMarks.slice(0,7);
+    }
+    if(isMayersMarkSystemActive()){
+      applyMayersMarkedSlotBuffs('player');
+      applyMayersMarkedSlotBuffs('enemy');
+    }
     if(removed > 0) logPlay(`${side === 'player' ? '내' : '상대'} 전장에서 ${removed}장이 제거되었다.`);
   }
 
@@ -14429,7 +14491,7 @@ function getWheelEmperorPhaseData(phase){
     if((card.keywords || []).includes('독성')) el.classList.add('poisonous-ready');
     if(card._poisonVictimVisualUntil && card._poisonVictimVisualUntil > Date.now()) el.classList.add('poison-victim-flash');
     if(card._immune || (card.keywords || []).includes('면역')) el.classList.add('immune-active');
-    if(isMayersMarkSystemActive() && zone === 'board' && getMayersMarks(owner)[Number(index || 0)]){ el.classList.add('mayers-marked-card'); if(String(card?.tribe || '') === '시테러') el.classList.add('mayers-marked-siterre'); }
+    if(isMayersMarkSystemActive() && zone === 'board' && getMayersMarks(owner)[Number(index || 0)]){ el.classList.add('mayers-marked-card'); if(isSiterreCard(card)) el.classList.add('mayers-marked-siterre'); }
     const mayersDecay = zone === 'board' ? getMayersDecayInfo(card) : {stage:0, label:''};
     if(mayersDecay.stage) el.classList.add(`mayers-decay-stage${mayersDecay.stage}`);
     if(card._mayersDecayKillUntil && card._mayersDecayKillUntil > Date.now()) el.classList.add('mayers-decay-kill');
@@ -14499,7 +14561,7 @@ function getWheelEmperorPhaseData(phase){
       slotPill.className = 'card-slot-pill';
       slotPill.textContent = `${Number(index || 0) + 1}번`;
       el.appendChild(slotPill);
-      if(isDriftingMayers() && getMayersMarks(owner)[Number(index || 0)] && String(card?.tribe || '') === '시테러'){
+      if(isMayersMarkSystemActive() && getMayersMarks(owner)[Number(index || 0)] && isSiterreCard(card)){
         const border = document.createElement('div');
         border.className = 'mayers-mark-border';
         const borderOffset = Number(card._mayersBorderOffset ?? (card._mayersBorderOffset = Math.random() * 2.6));
@@ -14689,7 +14751,7 @@ function getWheelEmperorPhaseData(phase){
       ? (cards || []).filter(card => card && (getCardHealth(card) > 0 || (card._deathrattleVisualUntil && card._deathrattleVisualUntil > now) || (card._battlecryVisualUntil && card._battlecryVisualUntil > now) || (card._pendingRemovalUntil && card._pendingRemovalUntil > now)))
       : (cards || []);
     if(zone === 'board'){
-      const marks = isDriftingMayers() ? getMayersMarks(owner) : Array(7).fill(false);
+      const marks = isMayersMarkSystemActive() ? getMayersMarks(owner) : Array(7).fill(false);
       const ruptures = isGachiu() ? getGachiuRuptureSlots(owner) : Array(7).fill(0);
       for(let i=0;i<7;i++){
         const slot = document.createElement('div');
@@ -14832,7 +14894,7 @@ function getWheelEmperorPhaseData(phase){
   function renderPlayState(){
     refreshHeathcliffPhaseAmbience();
     ensureMayersGlobalBubbleLayer();
-    document.body.classList.toggle('mayers-battle-active', !!isDriftingMayers() && !!state.playStarted);
+    document.body.classList.toggle('mayers-battle-active', !!isMayersMarkSystemActive() && !!state.playStarted);
     syncMayersGlobalBubbleLayer();
     syncBattlefieldBubbleFlow();
     const p = state.play.player, e = state.play.enemy;
@@ -14981,7 +15043,7 @@ function getWheelEmperorPhaseData(phase){
     const ctlCol = document.getElementById('controlColumn');
     const battlefield = document.getElementById('battlefieldMain');
     ensureBattlefieldBubbleLayer();
-    if(battlefield){ battlefield.classList.toggle('mayers-battle', isDriftingMayers()); battlefield.classList.toggle('mayers-phase2', !!state.play?.enemy?._mayersUltimatePhaseTwo); }
+    if(battlefield){ battlefield.classList.toggle('mayers-battle', isMayersMarkSystemActive()); battlefield.classList.toggle('mayers-phase2', !!state.play?.enemy?._mayersUltimatePhaseTwo); }
     shell.classList.toggle('prep-mode', !state.playStarted);
     shell.classList.toggle('live-mode', !!state.playStarted);
     prepCol.classList.toggle('full-span', !state.playStarted);
@@ -15479,7 +15541,13 @@ function getWheelEmperorPhaseData(phase){
 
 
   function processEndOfTurnBoardEffects(side){
-    const board = [...(state.play?.[side]?.board || [])];
+    const board = [...(state.play?.[side]?.board || [])].filter(card => {
+      if(!card) return false;
+      if(Number(getCardHealth(card) || 0) <= 0) return false;
+      if(card._deathrattlePendingRemove || card._deathrattlePendingReborn) return false;
+      if(card._pendingRemovalUntil && card._pendingRemovalUntil > Date.now()) return false;
+      return true;
+    });
     board.forEach(card => {
       const baseName = getBaseCardName(card);
       if(baseName === '심해의 정초자'){
@@ -20611,7 +20679,13 @@ if(_runOverlay){
       return !!(window.ensureRoguelikeState && ensureRoguelikeState().customCardsEnabled);
     }catch(_e){ return false; }
   }
+  function rpOpsAllowed(){
+    try{
+      return !document.body.classList.contains('roguelike-encounter-active') || rogueCustomOpsEnabled();
+    }catch(_e){ return true; }
+  }
   window.rogueCustomOpsEnabled = rogueCustomOpsEnabled;
+  window.rpOpsAllowed = rpOpsAllowed;
 
   const origBuild = window.buildRoguelikeDeckFromPicks;
   window.buildRoguelikeDeckFromPicks = function(size){
@@ -20721,7 +20795,7 @@ if(_runOverlay){
       const enemyAttackableCount = (state.play[owner === 'player' ? 'enemy' : 'player'].board || []).filter(canBeAttacked).length;
       if(!canAttackTarget(card, 'board', enemyAttackableCount)){
         if(isSummoningSick(card)){
-          if(!rogueCustomOpsEnabled()) return;
+          if(!rpOpsAllowed()) return;
           let msg = '이 하수인은 이번 턴에 방금 소환되어 아직 공격할 수 없다.';
           if(hasKeyword(card,'속공')) msg = '이 하수인은 속공이라 이번 턴에는 적 하수인만 바로 공격할 수 있다.';
           else if(hasKeyword(card,'돌격')) msg = '이 하수인은 돌격이라 적 하수인이 있으면 하수인만, 없으면 영웅을 즉시 공격할 수 있다.';
@@ -20734,7 +20808,7 @@ if(_runOverlay){
           updateAttackIndicators();
           return;
         } else if(card._hasAttacked){
-          if(!rogueCustomOpsEnabled()) return;
+          if(!rpOpsAllowed()) return;
           const forceAgain = confirm('이 하수인은 이번 턴에 이미 공격했다.\n\n그래도 RP상 다시 공격권을 부여할까?');
           if(!forceAgain) return;
           card._rpCanAttackThisTurn = true;
@@ -20756,7 +20830,7 @@ if(_runOverlay){
   const origResolveBoardAttack = window.resolveBoardAttack;
   window.resolveBoardAttack = function(defenderOwner, defenderIndex){
     const sel = state.attackSelection;
-    if(sel && !sel.rpIgnoreTauntRule && rogueCustomOpsEnabled()){
+    if(sel && !sel.rpIgnoreTauntRule && rpOpsAllowed()){
       const tauntIndices = getTauntIndices(defenderOwner);
       if(tauntIndices.length && !tauntIndices.includes(defenderIndex)){
         const ok = confirm('도발 하수인이 있어 원래는 그 하수인만 공격할 수 있다.\n\n그래도 RP상 도발을 무시하고 이 대상을 공격할까?');
@@ -20770,7 +20844,7 @@ if(_runOverlay){
   const origResolveHeroAttack = window.resolveHeroAttack;
   window.resolveHeroAttack = function(defenderOwner){
     const sel = state.attackSelection;
-    if(sel && !sel.rpIgnoreTauntRule && rogueCustomOpsEnabled()){
+    if(sel && !sel.rpIgnoreTauntRule && rpOpsAllowed()){
       const tauntIndices = getTauntIndices(defenderOwner);
       if(tauntIndices.length){
         const ok = confirm('도발 하수인이 있어 원래는 영웅을 공격할 수 없다.\n\n그래도 RP상 도발을 무시하고 영웅을 공격할까?');
@@ -20814,23 +20888,9 @@ if(_runOverlay){
     renderPlayState();
   };
 
-  // Override dead card cleanup to support RP survive cancellation in roguelike custom mode.
+  // Minion death should not open RP survive prompts.
   const origRemoveDeadBoardCards = window.removeDeadBoardCards;
   window.removeDeadBoardCards = function(side){
-    if(!rogueCustomOpsEnabled() || side !== 'player') return origRemoveDeadBoardCards.apply(this, arguments);
-    const board = state.play[side].board || [];
-    board.forEach(card => {
-      if(!card || getCardHealth(card) > 0) return;
-      if(card._deathrattlePendingRemove || card._deathrattlePendingReborn || card._deathrattleResolved) return;
-      if(card._rpDeathCancelled) return;
-      const ok = confirm(`${card.name || '하수인'}이(가) 쓰러졌다.\n\nRP상 죽음을 취소하고 생명력 1로 버틸까?`);
-      if(ok){
-        card._rpDeathCancelled = true;
-        setCardHealth(card, 1);
-        showCombatCue('RP 생존', `${card.name || '하수인'}이 생명력 1로 버텼다`, '커스텀', 'player', 1500);
-        logPlay(`${card.name || '하수인'}이 RP상 죽음을 취소하고 생명력 1로 버텼다.`);
-      }
-    });
     return origRemoveDeadBoardCards.apply(this, arguments);
   };
 
